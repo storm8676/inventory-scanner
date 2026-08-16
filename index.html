@@ -216,8 +216,7 @@ let currentLink = 'wide';
 let unknownCount = 0;
 let html5Qr = null;
 let lastScan = {code:null, t:0};
-let pauseTimer = null;
-const PAUSE_MS = 1200;
+
 
 // ---------------- 存储层：优先 Firebase 实时同步，没配置则退回本地 localStorage ----------------
 const LS_PREFIX = 'scanner-';
@@ -415,25 +414,20 @@ function switchToTab(link){
 }
 
 // ---------------- 扫描 ----------------
-function pauseThenResume(){
-  if(!html5Qr) return;
-  try{ html5Qr.pause(true); }catch(e){}
-  const hint = document.getElementById('scanHint');
-  hint.textContent = '已记录，准备扫下一个…';
-  hint.style.color = 'var(--mint)';
-  clearTimeout(pauseTimer);
-  pauseTimer = setTimeout(()=>{
-    if(!html5Qr) return;
-    try{ html5Qr.resume(); }catch(e){}
-    hint.textContent = '对准条码，会自动识别';
-    hint.style.color = 'var(--text-dim)';
-  }, PAUSE_MS);
+let missStreak = 0;
+const MISS_RESET_THRESHOLD = 6; // 连续多少帧没识别到码，就认为条码已经离开画面，允许重新计数
+
+function onScanMiss(){
+  missStreak++;
+  if(missStreak >= MISS_RESET_THRESHOLD){
+    lastScan.code = null; // 条码已离开镜头，解除防重复
+  }
 }
 
 function handleDecoded(code){
-  const now = Date.now();
-  if(lastScan.code===code && now-lastScan.t < 1500) return;
-  lastScan = {code, t:now};
+  missStreak = 0; // 识别到码了，说明还在画面里，清零"离开"计数
+  if(lastScan.code === code) return; // 同一个码还杵在镜头里，跳过
+  lastScan.code = code;
   if(navigator.vibrate) navigator.vibrate(40);
 
   // 1. 两个链接的对照表里只要有一个匹配就直接计数
@@ -443,7 +437,6 @@ function handleDecoded(code){
       if(link !== currentLink) switchToTab(link);
       addCount(link, sku, 1);
       showFlash(`${sku}  +1  (累计 ${state[link].session[sku]})`, 'ok');
-      pauseThenResume();
       return;
     }
   }
@@ -456,7 +449,6 @@ function handleDecoded(code){
     persistMapping(parsed.link);
     addCount(parsed.link, parsed.sku, 1);
     showFlash(`自动识别 ${parsed.sku}  +1`, 'ok');
-    pauseThenResume();
     return;
   }
 
@@ -483,7 +475,7 @@ async function startScanner(){
       { facingMode: 'environment' },
       { fps: 12, qrbox: { width: 260, height: 160 } },
       handleDecoded,
-      ()=>{}
+      onScanMiss
     );
   }catch(e){
     document.getElementById('scanHint').textContent = '无法打开摄像头：请检查浏览器摄像头权限，或改用下方"手动录入"。';
@@ -491,7 +483,6 @@ async function startScanner(){
   }
 }
 async function stopScanner(){
-  clearTimeout(pauseTimer);
   if(html5Qr){
     try{ await html5Qr.stop(); html5Qr.clear(); }catch(e){}
     html5Qr = null;
