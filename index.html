@@ -131,8 +131,7 @@
   <textarea id="exportBox" readonly placeholder="扫描或手动录入后，这里会生成 sku 数量 格式的清单"></textarea>
   <button class="btn btn-ghost" id="copyBtn">复制到剪贴板</button>
   <div class="btn-row">
-    <button class="btn btn-ghost" id="exportExcelWide">导出宽版 Excel</button>
-    <button class="btn btn-ghost" id="exportExcelNarrow">导出窄版 Excel</button>
+    <button class="btn btn-ghost" id="exportExcelBtn">导出 Excel（宽版+窄版）</button>
   </div>
 </div>
 
@@ -549,43 +548,45 @@ document.getElementById('copyBtn').addEventListener('click', async ()=>{
   }
 });
 
-// ---------------- 导出Excel（按"自有库存.xlsx"模版格式） ----------------
-function buildTemplateSheet(link){
-  // 列位置跟模版完全一致：宽版用 D(SKU)/E(数量)，窄版用 G(SKU)/H(数量)
+// ---------------- 导出Excel（按"自有库存.xlsx"模版格式，宽版窄版并排放在同一张表） ----------------
+function buildCombinedSheet(){
+  // 列位置跟模版完全一致：宽版用 D(SKU)/E(数量)，窄版用 G(SKU)/H(数量)，同一张表
   // 数组下标: 0=C 1=D 2=E 3=F 4=G 5=H 6=I
-  const skuCol = link==='wide' ? 1 : 4;
-  const qtyCol = link==='wide' ? 2 : 5;
-  const headerText = link==='wide' ? '宽版' : '窄版';
-  const skuList = SKUS[link];
-  const session = state[link].session;
-
   const rows = [];
-  for(let r=0; r<43; r++) rows.push(['','','','','','','']); // 第1行到第43行，全部先留空
+  for(let r=0; r<43; r++) rows.push(['','','','','','','']);
 
-  rows[5][skuCol] = headerText; // 第6行（下标5）标题
-  skuList.forEach((sku, i)=>{
-    const rowIdx = 6 + i; // 第7行（下标6）开始
-    rows[rowIdx][skuCol] = sku;
-    rows[rowIdx][qtyCol] = session[sku] || 0;
+  rows[5][1] = '宽版';
+  rows[5][4] = '窄版';
+
+  SKUS.wide.forEach((sku, i)=>{
+    const rowIdx = 6 + i;
+    rows[rowIdx][1] = sku;
+    rows[rowIdx][2] = state.wide.session[sku] || 0;
+  });
+  SKUS.narrow.forEach((sku, i)=>{
+    const rowIdx = 6 + i;
+    rows[rowIdx][4] = sku;
+    rows[rowIdx][5] = state.narrow.session[sku] || 0;
   });
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!merges'] = [{ s:{r:5,c:skuCol}, e:{r:5,c:qtyCol} }]; // 标题合并单元格，跟模版一致
+  ws['!merges'] = [
+    { s:{r:5,c:1}, e:{r:5,c:2} }, // D6:E6 宽版标题
+    { s:{r:5,c:4}, e:{r:5,c:5} }  // G6:H6 窄版标题
+  ];
   ws['!cols'] = [{wch:4},{wch:12},{wch:8},{wch:4},{wch:12},{wch:8},{wch:4}];
   return ws;
 }
 
-function exportExcel(link){
+function exportExcelCombined(){
   const wb = XLSX.utils.book_new();
-  const ws = buildTemplateSheet(link);
+  const ws = buildCombinedSheet();
   XLSX.utils.book_append_sheet(wb, ws, '库存');
-  const label = link==='wide' ? '宽版' : '窄版';
-  const filename = `自有库存-${label}-${new Date().toISOString().slice(0,10)}.xlsx`;
+  const filename = `自有库存-${new Date().toISOString().slice(0,10)}.xlsx`;
   XLSX.writeFile(wb, filename);
 }
 
-document.getElementById('exportExcelWide').addEventListener('click', ()=>exportExcel('wide'));
-document.getElementById('exportExcelNarrow').addEventListener('click', ()=>exportExcel('narrow'));
+document.getElementById('exportExcelBtn').addEventListener('click', exportExcelCombined);
 function exportBackup(){
   const data = {
     exportedAt: new Date().toISOString(),
