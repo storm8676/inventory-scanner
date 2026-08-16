@@ -573,12 +573,13 @@ async function exportExcelCombined(){
     bottom:{style:'thin', color:{argb:'FF000000'}},
     right:{style:'thin', color:{argb:'FF000000'}}
   };
+  const fontName = '微软雅黑';
 
   function styleHeader(addr, text){
     const c = ws.getCell(addr);
     c.value = text;
     c.alignment = centerStyle;
-    c.font = { bold:true };
+    c.font = { name:fontName, bold:true, size:12 };
     c.border = blackBorder;
   }
   function fillColumn(skuCol, qtyCol, skuList, session){
@@ -591,6 +592,8 @@ async function exportExcelCombined(){
       qtyCell.value = qty;
       skuCell.alignment = centerStyle;
       qtyCell.alignment = centerStyle;
+      skuCell.font = { name:fontName };
+      qtyCell.font = { name:fontName };
       skuCell.border = blackBorder;
       qtyCell.border = blackBorder;
       if(qty > 0){ qtyCell.fill = highlightFill; }
@@ -599,10 +602,10 @@ async function exportExcelCombined(){
 
   ws.mergeCells('D6:E6');
   ws.mergeCells('G6:H6');
-  styleHeader('D6', '宽版');
-  styleHeader('E6', ''); // 合并单元格的另一半也要有边框
+  styleHeader('D6', '宽版'); // 只在合并区域的主单元格(左上角)写文字
   styleHeader('G6', '窄版');
-  styleHeader('H6', '');
+  ws.getCell('E6').border = blackBorder; // 被合并掉的那半，文字不写，边框单独补上
+  ws.getCell('H6').border = blackBorder;
   ws.getRow(6).height = 26; // 表头行高加大
 
   fillColumn('D', 'E', SKUS.wide, state.wide.session);
