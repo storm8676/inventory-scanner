@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>扫码入库</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 <style>
@@ -549,41 +549,54 @@ document.getElementById('copyBtn').addEventListener('click', async ()=>{
 });
 
 // ---------------- 导出Excel（按"自有库存.xlsx"模版格式，宽版窄版并排放在同一张表） ----------------
-function buildCombinedSheet(){
-  // 列位置跟模版完全一致：宽版用 D(SKU)/E(数量)，窄版用 G(SKU)/H(数量)，同一张表
-  // 数组下标: 0=C 1=D 2=E 3=F 4=G 5=H 6=I
-  const rows = [];
-  for(let r=0; r<43; r++) rows.push(['','','','','','','']);
+async function exportExcelCombined(){
+  const workbook = new ExcelJS.Workbook();
+  const ws = workbook.addWorksheet('库存');
+  ws.columns = [
+    {width:4},{width:12},{width:8},{width:4},{width:12},{width:8},{width:4}
+  ]; // C D E F G H I
 
-  rows[5][1] = '宽版';
-  rows[5][4] = '窄版';
+  const centerStyle = { horizontal:'center', vertical:'middle' };
+  const highlightFill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFD7F0DC' } }; // 浅绿色
 
-  SKUS.wide.forEach((sku, i)=>{
-    const rowIdx = 6 + i;
-    rows[rowIdx][1] = sku;
-    rows[rowIdx][2] = state.wide.session[sku] || 0;
-  });
-  SKUS.narrow.forEach((sku, i)=>{
-    const rowIdx = 6 + i;
-    rows[rowIdx][4] = sku;
-    rows[rowIdx][5] = state.narrow.session[sku] || 0;
-  });
+  function styleHeader(addr, text){
+    ws.getCell(addr).value = text;
+    const c = ws.getCell(addr);
+    c.alignment = centerStyle;
+    c.font = { bold:true };
+  }
+  function fillColumn(skuCol, qtyCol, skuList, session){
+    skuList.forEach((sku, i)=>{
+      const r = 7 + i;
+      const skuCell = ws.getCell(`${skuCol}${r}`);
+      const qtyCell = ws.getCell(`${qtyCol}${r}`);
+      const qty = session[sku] || 0;
+      skuCell.value = sku;
+      qtyCell.value = qty;
+      skuCell.alignment = centerStyle;
+      qtyCell.alignment = centerStyle;
+      if(qty > 0){ qtyCell.fill = highlightFill; }
+    });
+  }
 
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!merges'] = [
-    { s:{r:5,c:1}, e:{r:5,c:2} }, // D6:E6 宽版标题
-    { s:{r:5,c:4}, e:{r:5,c:5} }  // G6:H6 窄版标题
-  ];
-  ws['!cols'] = [{wch:4},{wch:12},{wch:8},{wch:4},{wch:12},{wch:8},{wch:4}];
-  return ws;
-}
+  ws.mergeCells('D6:E6');
+  ws.mergeCells('G6:H6');
+  styleHeader('D6', '宽版');
+  styleHeader('G6', '窄版');
 
-function exportExcelCombined(){
-  const wb = XLSX.utils.book_new();
-  const ws = buildCombinedSheet();
-  XLSX.utils.book_append_sheet(wb, ws, '库存');
-  const filename = `自有库存-${new Date().toISOString().slice(0,10)}.xlsx`;
-  XLSX.writeFile(wb, filename);
+  fillColumn('D', 'E', SKUS.wide, state.wide.session);
+  fillColumn('G', 'H', SKUS.narrow, state.narrow.session);
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type:'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `自有库存-${new Date().toISOString().slice(0,10)}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 document.getElementById('exportExcelBtn').addEventListener('click', exportExcelCombined);
