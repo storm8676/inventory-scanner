@@ -415,12 +415,14 @@ function switchToTab(link){
 
 // ---------------- 扫描 ----------------
 let missStreak = 0;
-const MISS_RESET_THRESHOLD = 6; // 连续多少帧没识别到码，就认为条码已经离开画面，允许重新计数
+let lastCountTime = 0;
+const MISS_RESET_THRESHOLD = 15; // 连续多少帧没识别到码
+const MIN_HOLD_MS = 900;         // 且至少经过这么久，两个条件都满足才解除防重复（过滤对焦抖动导致的偶发漏检）
 
 function onScanMiss(){
   missStreak++;
-  if(missStreak >= MISS_RESET_THRESHOLD){
-    lastScan.code = null; // 条码已离开镜头，解除防重复
+  if(missStreak >= MISS_RESET_THRESHOLD && (Date.now() - lastCountTime) >= MIN_HOLD_MS){
+    lastScan.code = null; // 条码确实已离开镜头一段时间，解除防重复
   }
 }
 
@@ -428,6 +430,7 @@ function handleDecoded(code){
   missStreak = 0; // 识别到码了，说明还在画面里，清零"离开"计数
   if(lastScan.code === code) return; // 同一个码还杵在镜头里，跳过
   lastScan.code = code;
+  lastCountTime = Date.now();
   if(navigator.vibrate) navigator.vibrate(40);
 
   // 1. 两个链接的对照表里只要有一个匹配就直接计数
