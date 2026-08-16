@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>扫码入库</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+<style>
+  :root{
+    --bg:#15130f;
+    --panel:#1f1c16;
+    --panel-2:#26221a;
+    --line:#3a352a;
+    --amber:#ff8a1e;
+    --amber-dim:#c96a12;
+    --mint:#5fd6a0;
+    --red:#ff5c5c;
+    --text:#efe9dd;
+    --text-dim:#9d9686;
+    --mono:'IBM Plex Mono','SFMono-Regular',Consolas,monospace;
+    --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:var(--sans);}
+  body{padding:14px 14px 60px;max-width:640px;margin:0 auto;}
+  h1{font-family:var(--mono);font-size:15px;letter-spacing:.12em;text-transform:uppercase;color:var(--amber);margin:4px 0 2px;display:flex;justify-content:space-between;align-items:center;}
+  .sub{color:var(--text-dim);font-size:12px;margin-bottom:16px;}
+  .sync-badge{font-family:var(--mono);font-size:10px;padding:3px 8px;border-radius:20px;border:1px solid var(--line);letter-spacing:.04em;cursor:pointer;}
+  .sync-badge.on{color:var(--mint);border-color:var(--mint);}
+  .sync-badge.off{color:var(--text-dim);}
+
+  .tabs{display:flex;gap:8px;margin-bottom:14px;}
+  .tab{flex:1;padding:10px 0;text-align:center;border:1px solid var(--line);border-radius:8px;background:var(--panel);
+       font-family:var(--mono);font-size:13px;letter-spacing:.04em;color:var(--text-dim);cursor:pointer;}
+  .tab.active{border-color:var(--amber);color:var(--amber);background:#2a2114;}
+
+  .counter{display:flex;align-items:baseline;justify-content:space-between;background:var(--panel);border:1px solid var(--line);
+           border-radius:10px;padding:14px 16px;margin-bottom:14px;}
+  .counter .n{font-family:var(--mono);font-size:34px;color:var(--mint);font-variant-numeric:tabular-nums;}
+  .counter .lbl{font-size:11px;color:var(--text-dim);letter-spacing:.08em;text-transform:uppercase;}
+
+  button{font-family:var(--sans);cursor:pointer;}
+  .btn{width:100%;padding:14px;border-radius:10px;border:none;font-size:15px;font-weight:600;}
+  .btn-scan{background:var(--amber);color:#1a1400;}
+  .btn-scan:active{background:var(--amber-dim);}
+  .btn-ghost{background:var(--panel-2);color:var(--text);border:1px solid var(--line);}
+  .btn-row{display:flex;gap:8px;margin-top:8px;}
+  .btn-row .btn{flex:1;padding:10px;font-size:13px;}
+  .btn-danger{color:var(--red);}
+
+  #reader{width:100%;border-radius:10px;overflow:hidden;margin-top:10px;}
+  .scan-overlay{position:fixed;inset:0;background:#0d0c09;z-index:50;padding:14px;display:none;flex-direction:column;}
+  .scan-overlay.open{display:flex;}
+  .scan-close{align-self:flex-end;background:var(--panel-2);border:1px solid var(--line);color:var(--text);
+              border-radius:8px;padding:8px 14px;font-size:13px;margin-bottom:8px;}
+  .flash{position:fixed;left:14px;right:14px;bottom:70px;z-index:60;padding:14px;border-radius:10px;
+         font-family:var(--mono);font-size:14px;display:none;}
+  .flash.ok{background:#12331f;border:1px solid var(--mint);color:var(--mint);}
+  .flash.new{background:#332812;border:1px solid var(--amber);color:var(--amber);}
+  .flash.err{background:#331515;border:1px solid var(--red);color:var(--red);}
+
+  .map-form{background:var(--panel);border:1px solid var(--amber);border-radius:10px;padding:14px;margin-top:10px;}
+  .map-form .code{font-family:var(--mono);font-size:13px;color:var(--text-dim);word-break:break-all;margin-bottom:8px;}
+  select,input[type=number]{width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);
+       background:var(--panel-2);color:var(--text);font-size:14px;margin-bottom:8px;font-family:var(--mono);}
+
+  table{width:100%;border-collapse:collapse;margin-top:12px;font-family:var(--mono);font-size:13px;}
+  th,td{text-align:left;padding:7px 4px;border-bottom:1px solid var(--line);}
+  th{color:var(--text-dim);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.06em;}
+  td.n{text-align:right;color:var(--mint);}
+  td.del{text-align:right;color:var(--red);font-family:var(--sans);cursor:pointer;padding-left:8px;}
+  .empty{color:var(--text-dim);font-size:13px;padding:16px 0;text-align:center;}
+
+  .section{margin-top:24px;}
+  .section h2{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);
+             margin:0 0 8px;border-bottom:1px solid var(--line);padding-bottom:6px;}
+  textarea{width:100%;min-height:120px;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;
+          color:var(--text);font-family:var(--mono);font-size:13px;padding:10px;margin-bottom:8px;}
+  details{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-top:14px;}
+  summary{font-family:var(--mono);font-size:12px;color:var(--text-dim);cursor:pointer;letter-spacing:.06em;text-transform:uppercase;}
+  .manual-row{display:flex;gap:8px;align-items:center;margin-top:10px;}
+  .manual-row select{margin-bottom:0;}
+  .stepper{display:flex;align-items:center;gap:6px;}
+  .stepper button{width:34px;height:34px;border-radius:6px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-size:16px;}
+  .settings-note{font-size:12px;color:var(--text-dim);line-height:1.6;margin-bottom:10px;}
+</style>
+</head>
+<body>
+
+<h1>扫码入库 <span class="sync-badge off" id="syncBadge">未连接同步</span></h1>
+<div class="sub">扫描商品包装条码 → 自动识别SKU → 累计数量 → 导出粘贴到库存工具</div>
+
+<div class="tabs">
+  <div class="tab active" data-link="wide">宽版</div>
+  <div class="tab" data-link="narrow">窄版</div>
+</div>
+
+<div class="counter">
+  <div><div class="lbl">本次已扫件数</div><div class="n" id="totalCount">0</div></div>
+  <div style="text-align:right"><div class="lbl">未识别条码</div><div class="n" id="unknownCount" style="color:var(--text-dim);font-size:20px">0</div></div>
+</div>
+
+<button class="btn btn-scan" id="openScan">📷 开始扫描</button>
+<div class="btn-row">
+  <button class="btn btn-ghost" id="clearSession">清空本次</button>
+  <button class="btn btn-ghost btn-danger" id="clearMappingBtn">清空对照表</button>
+</div>
+
+<div class="section">
+  <h2>手动录入 / 修正</h2>
+  <div class="manual-row">
+    <select id="manualSku"></select>
+    <div class="stepper">
+      <button id="manualMinus">−</button>
+      <input type="number" id="manualNum" value="1" style="width:52px;text-align:center;margin-bottom:0;">
+      <button id="manualPlus">＋</button>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>本次累计</h2>
+  <div id="sessionTable"></div>
+</div>
+
+<div class="section">
+  <h2>导出（可直接粘贴到"当前库存录入"或"在途库存录入"）</h2>
+  <textarea id="exportBox" readonly placeholder="扫描或手动录入后，这里会生成 sku 数量 格式的清单"></textarea>
+  <button class="btn btn-ghost" id="copyBtn">复制到剪贴板</button>
+</div>
+
+<details>
+  <summary>条码 → SKU 对照表（<span id="mapCount">0</span> 条）</summary>
+  <div id="mappingTable"></div>
+</details>
+
+<details id="syncDetails">
+  <summary>实时同步设置</summary>
+  <div class="settings-note" id="syncStatusText">还没连接同步。粘贴 Firebase 配置到下面，点保存，这台设备就会自动同步；在另一台设备打开同一个网址，粘贴同样的配置，两边就会实时同步数据。</div>
+  <textarea id="firebaseConfigInput">const firebaseConfig = {
+  apiKey: "AIzaSyCr_Skh74yMB0-ZT4LmkHQU7BFjWqj8_tg",
+  authDomain: "inventory-scanner-aff1b.firebaseapp.com",
+  databaseURL: "https://inventory-scanner-aff1b-default-rtdb.firebaseio.com",
+  projectId: "inventory-scanner-aff1b",
+  storageBucket: "inventory-scanner-aff1b.firebasestorage.app",
+  messagingSenderId: "919473489739",
+  appId: "1:919473489739:web:68f6d7b70daa6b71e60ace",
+  measurementId: "G-TFZNQD7SJ8"
+};</textarea>
+  <div class="btn-row">
+    <button class="btn btn-scan" id="saveFirebaseConfig">保存并连接</button>
+    <button class="btn btn-ghost btn-danger" id="clearFirebaseConfig">断开同步</button>
+  </div>
+</div>
+</details>
+
+<div class="section">
+  <h2>备份 / 手动传输（不连同步时用）</h2>
+  <div class="sub" style="margin-bottom:8px;">已连接实时同步的话通常不需要这个；没连同步时，靠导出/导入文件手动传数据。</div>
+  <div class="btn-row">
+    <button class="btn btn-ghost" id="exportBackupBtn">导出备份文件</button>
+    <button class="btn btn-ghost" id="importBackupBtn">导入备份文件</button>
+  </div>
+  <input type="file" id="importFileInput" accept="application/json" style="display:none;">
+</div>
+
+<!-- scan overlay -->
+<div class="scan-overlay" id="scanOverlay">
+  <button class="scan-close" id="closeScan">✕ 关闭</button>
+  <div id="reader"></div>
+  <div id="scanHint" style="margin-top:10px;color:var(--text-dim);font-size:12px;text-align:center;">对准条码，会自动识别</div>
+</div>
+
+<!-- unknown-code mapping panel -->
+<div class="map-form" id="mapForm" style="display:none;">
+  <div class="code">未识别条码：<span id="mapFormCode"></span></div>
+  <select id="mapFormSku"></select>
+  <div class="btn-row">
+    <button class="btn btn-ghost" id="mapFormCancel">忽略这次</button>
+    <button class="btn btn-scan" id="mapFormConfirm">保存并计数</button>
+  </div>
+</div>
+
+<div class="flash" id="flash"></div>
+
+<script>
+const SIZES4 = ['S','M','L','XL'];
+const SIZES6 = ['S','M','L','XL','2XL','3XL'];
+
+function buildWideSkus(){
+  const out=[];
+  for(const color of ['蓝','黑','白'])
+    for(const len of ['83','84','85'])
+      for(const size of SIZES4)
+        out.push(`${color}-${len}-${size}`);
+  return out;
+}
+function buildNarrowSkus(){
+  const out=[];
+  for(const g of [{name:'深',codes:['75','73','71']},{name:'浅',codes:['76','74','72']}])
+    for(const code of g.codes)
+      for(const size of SIZES6)
+        out.push(`${g.name}-${code}-${size}`);
+  return out;
+}
+const SKUS = { wide: buildWideSkus(), narrow: buildNarrowSkus() };
+
+// ---- 状态：两个链接各自的 对照表 + 本次累计，始终都在内存里，跟当前显示的tab无关 ----
+const state = {
+  wide:   { mapping:{}, session:{} },
+  narrow: { mapping:{}, session:{} }
+};
+let currentLink = 'wide';
+let unknownCount = 0;
+let html5Qr = null;
+let lastScan = {code:null, t:0};
+let pauseTimer = null;
+const PAUSE_MS = 1200;
+
+// ---------------- 存储层：优先 Firebase 实时同步，没配置则退回本地 localStorage ----------------
+const LS_PREFIX = 'scanner-';
+let db = null;
+let firebaseReady = false;
+
+function lsGet(key){
+  try{ const raw = localStorage.getItem(LS_PREFIX+key); return raw ? JSON.parse(raw) : null; }catch(e){ return null; }
+}
+function lsSet(key, obj){
+  try{ localStorage.setItem(LS_PREFIX+key, JSON.stringify(obj)); }catch(e){ console.error(e); }
+}
+
+function setSyncBadge(on, text){
+  const b = document.getElementById('syncBadge');
+  b.textContent = text;
+  b.className = 'sync-badge ' + (on ? 'on' : 'off');
+}
+
+function tryInitFirebase(){
+  const raw = localStorage.getItem('firebaseConfigRaw');
+  if(!raw) return;
+  try{
+    const config = JSON.parse(raw);
+    firebase.initializeApp(config);
+    db = firebase.database();
+    firebaseReady = true;
+    setSyncBadge(true, '已连接同步');
+    document.getElementById('syncStatusText').textContent = '已连接：这台设备的数据会自动上传，别的设备连了同一个配置也会自动收到更新。';
+    attachRealtimeListeners();
+  }catch(e){
+    console.error('firebase init failed', e);
+    setSyncBadge(false, '同步配置有误');
+  }
+}
+
+function attachRealtimeListeners(){
+  ['wide','narrow'].forEach(link=>{
+    db.ref(`mapping-${link}`).on('value', snap=>{
+      state[link].mapping = snap.val() || {};
+      if(link===currentLink) renderAll();
+    });
+    db.ref(`session-${link}`).on('value', snap=>{
+      state[link].session = snap.val() || {};
+      if(link===currentLink) renderAll();
+    });
+  });
+}
+
+function persistMapping(link){
+  if(firebaseReady){ db.ref(`mapping-${link}`).set(state[link].mapping); }
+  else{ lsSet(`mapping-${link}`, state[link].mapping); }
+}
+function persistSession(link){
+  if(firebaseReady){ db.ref(`session-${link}`).set(state[link].session); }
+  else{ lsSet(`session-${link}`, state[link].session); }
+}
+
+function loadLocalFallback(link){
+  state[link].mapping = lsGet(`mapping-${link}`) || {};
+  state[link].session = lsGet(`session-${link}`) || {};
+}
+
+// ---------------- Firebase 配置粘贴解析 ----------------
+function parseFirebaseConfigText(text){
+  // 从粘贴的整段代码里找出 { ... } 这部分，用 Function 当 JS 对象字面量解析（不是 JSON，key 可能没引号）
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if(start === -1 || end === -1 || end <= start) throw new Error('没找到 { } 配置内容');
+  const objText = text.slice(start, end+1);
+  const obj = new Function('return (' + objText + ')')();
+  if(!obj.apiKey || !obj.databaseURL) throw new Error('缺少 apiKey 或 databaseURL');
+  return obj;
+}
+
+document.getElementById('saveFirebaseConfig').addEventListener('click', ()=>{
+  const text = document.getElementById('firebaseConfigInput').value.trim();
+  if(!text) return;
+  try{
+    const config = parseFirebaseConfigText(text);
+    localStorage.setItem('firebaseConfigRaw', JSON.stringify(config));
+    location.reload();
+  }catch(e){
+    showFlash('配置解析失败：' + e.message, 'err');
+  }
+});
+document.getElementById('clearFirebaseConfig').addEventListener('click', ()=>{
+  if(!confirm('断开实时同步？以后这台设备只会存本地数据。')) return;
+  localStorage.removeItem('firebaseConfigRaw');
+  location.reload();
+});
+
+// ---------------- 条码自动解析规则 ----------------
+// TCJN-{1宽版|2窄版}-{颜色/色调}-N{长度/编码}-{尺码}
+function parseBarcode(code){
+  const m = code.match(/^TCJN-(1|2)-([A-Z]+)-N0?(\d+)-([A-Z0-9]+)$/);
+  if(!m) return null;
+  const linkNum = m[1], colorRaw = m[2], numRaw = m[3], size = m[4];
+
+  if(linkNum === '1'){
+    const colorMap = { BLU:'蓝', BLK:'黑', WHT:'白' };
+    const color = colorMap[colorRaw];
+    if(!color || !SIZES4.includes(size)) return null;
+    const len = String(parseInt(numRaw, 10));
+    const sku = `${color}-${len}-${size}`;
+    return SKUS.wide.includes(sku) ? {link:'wide', sku} : null;
+  } else {
+    const toneMap = { DK:'深', LT:'浅' };
+    const tone = toneMap[colorRaw];
+    if(!tone || !SIZES6.includes(size)) return null;
+    const codeNum = String(parseInt(numRaw, 10));
+    const sku = `${tone}-${codeNum}-${size}`;
+    return SKUS.narrow.includes(sku) ? {link:'narrow', sku} : null;
+  }
+}
+
+// ---------------- 渲染 ----------------
+function fillSkuSelect(sel){
+  sel.innerHTML = SKUS[currentLink].map(s=>`<option value="${s}">${s}</option>`).join('');
+}
+
+function renderAll(){
+  fillSkuSelect(document.getElementById('manualSku'));
+  fillSkuSelect(document.getElementById('mapFormSku'));
+  renderSessionTable();
+  renderMappingTable();
+  renderExport();
+  const total = Object.values(state[currentLink].session).reduce((a,b)=>a+b,0);
+  document.getElementById('totalCount').textContent = total;
+}
+
+function renderSessionTable(){
+  const el = document.getElementById('sessionTable');
+  const session = state[currentLink].session;
+  const order = SKUS[currentLink];
+  const rows = order.filter(sku=>session[sku]>0);
+  if(rows.length===0){ el.innerHTML = '<div class="empty">还没有扫描或录入记录</div>'; return; }
+  el.innerHTML = `<table><thead><tr><th>SKU</th><th style="text-align:right">数量</th><th></th></tr></thead><tbody>` +
+    rows.map(sku=>`<tr><td>${sku}</td><td class="n">${session[sku]}</td><td class="del" data-sku="${sku}">清零</td></tr>`).join('') +
+    `</tbody></table>`;
+  el.querySelectorAll('.del').forEach(d=>d.addEventListener('click', ()=>{
+    delete state[currentLink].session[d.dataset.sku];
+    persistSession(currentLink);
+    renderAll();
+  }));
+}
+
+function renderMappingTable(){
+  const el = document.getElementById('mappingTable');
+  const mapping = state[currentLink].mapping;
+  const entries = Object.entries(mapping);
+  document.getElementById('mapCount').textContent = entries.length;
+  if(entries.length===0){ el.innerHTML = '<div class="empty">还没有建立对照关系</div>'; return; }
+  el.innerHTML = `<table><thead><tr><th>条码</th><th>SKU</th><th></th></tr></thead><tbody>` +
+    entries.map(([code,sku])=>`<tr><td style="max-width:130px;overflow:hidden;text-overflow:ellipsis">${code}</td><td>${sku}</td><td class="del" data-code="${code}">删除</td></tr>`).join('') +
+    `</tbody></table>`;
+  el.querySelectorAll('.del').forEach(d=>d.addEventListener('click', ()=>{
+    delete state[currentLink].mapping[d.dataset.code];
+    persistMapping(currentLink);
+    renderAll();
+  }));
+}
+
+function renderExport(){
+  const session = state[currentLink].session;
+  const order = SKUS[currentLink];
+  const lines = order.filter(sku=>session[sku]>0).map(sku=>`${sku} ${session[sku]}`);
+  document.getElementById('exportBox').value = lines.join('\n');
+}
+
+function showFlash(text, cls){
+  const f = document.getElementById('flash');
+  f.textContent = text;
+  f.className = 'flash '+cls;
+  f.style.display = 'block';
+  clearTimeout(showFlash._t);
+  showFlash._t = setTimeout(()=>{ f.style.display='none'; }, 1600);
+}
+
+function addCount(link, sku, delta){
+  const session = state[link].session;
+  session[sku] = Math.max(0, (session[sku]||0) + delta);
+  if(session[sku]===0) delete session[sku];
+  persistSession(link);
+  if(link===currentLink) renderAll();
+}
+
+function switchToTab(link){
+  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active', x.dataset.link===link));
+  currentLink = link;
+  if(!firebaseReady) loadLocalFallback(link);
+  unknownCount = 0;
+  document.getElementById('unknownCount').textContent = '0';
+  renderAll();
+}
+
+// ---------------- 扫描 ----------------
+function pauseThenResume(){
+  if(!html5Qr) return;
+  try{ html5Qr.pause(true); }catch(e){}
+  const hint = document.getElementById('scanHint');
+  hint.textContent = '已记录，准备扫下一个…';
+  hint.style.color = 'var(--mint)';
+  clearTimeout(pauseTimer);
+  pauseTimer = setTimeout(()=>{
+    if(!html5Qr) return;
+    try{ html5Qr.resume(); }catch(e){}
+    hint.textContent = '对准条码，会自动识别';
+    hint.style.color = 'var(--text-dim)';
+  }, PAUSE_MS);
+}
+
+function handleDecoded(code){
+  const now = Date.now();
+  if(lastScan.code===code && now-lastScan.t < 1500) return;
+  lastScan = {code, t:now};
+  if(navigator.vibrate) navigator.vibrate(40);
+
+  // 1. 两个链接的对照表里只要有一个匹配就直接计数
+  for(const link of ['wide','narrow']){
+    if(state[link].mapping[code]){
+      const sku = state[link].mapping[code];
+      if(link !== currentLink) switchToTab(link);
+      addCount(link, sku, 1);
+      showFlash(`${sku}  +1  (累计 ${state[link].session[sku]})`, 'ok');
+      pauseThenResume();
+      return;
+    }
+  }
+
+  // 2. 按 TCJN 规则自动解析
+  const parsed = parseBarcode(code);
+  if(parsed){
+    if(parsed.link !== currentLink) switchToTab(parsed.link);
+    state[parsed.link].mapping[code] = parsed.sku;
+    persistMapping(parsed.link);
+    addCount(parsed.link, parsed.sku, 1);
+    showFlash(`自动识别 ${parsed.sku}  +1`, 'ok');
+    pauseThenResume();
+    return;
+  }
+
+  // 3. 无法识别，手动指定
+  unknownCount++;
+  document.getElementById('unknownCount').textContent = unknownCount;
+  showFlash('未识别条码，请在下方指定对应SKU', 'new');
+  document.getElementById('mapFormCode').textContent = code;
+  document.getElementById('mapForm').style.display = 'block';
+  document.getElementById('mapForm').dataset.code = code;
+  stopScanner();
+  closeOverlay();
+}
+
+function openOverlay(){ document.getElementById('scanOverlay').classList.add('open'); }
+function closeOverlay(){ document.getElementById('scanOverlay').classList.remove('open'); }
+
+async function startScanner(){
+  document.getElementById('mapForm').style.display='none';
+  openOverlay();
+  html5Qr = new Html5Qrcode('reader');
+  try{
+    await html5Qr.start(
+      { facingMode: 'environment' },
+      { fps: 12, qrbox: { width: 260, height: 160 } },
+      handleDecoded,
+      ()=>{}
+    );
+  }catch(e){
+    document.getElementById('scanHint').textContent = '无法打开摄像头：请检查浏览器摄像头权限，或改用下方"手动录入"。';
+    document.getElementById('scanHint').style.color = 'var(--red)';
+  }
+}
+async function stopScanner(){
+  clearTimeout(pauseTimer);
+  if(html5Qr){
+    try{ await html5Qr.stop(); html5Qr.clear(); }catch(e){}
+    html5Qr = null;
+  }
+}
+
+document.getElementById('openScan').addEventListener('click', startScanner);
+document.getElementById('closeScan').addEventListener('click', async ()=>{ await stopScanner(); closeOverlay(); });
+
+document.getElementById('mapFormCancel').addEventListener('click', ()=>{
+  document.getElementById('mapForm').style.display='none';
+});
+document.getElementById('mapFormConfirm').addEventListener('click', ()=>{
+  const code = document.getElementById('mapForm').dataset.code;
+  const sku = document.getElementById('mapFormSku').value;
+  state[currentLink].mapping[code] = sku;
+  persistMapping(currentLink);
+  addCount(currentLink, sku, 1);
+  showFlash(`${sku}  +1  已建立对照`, 'ok');
+  document.getElementById('mapForm').style.display='none';
+});
+
+document.getElementById('manualPlus').addEventListener('click', ()=>{
+  const sku = document.getElementById('manualSku').value;
+  const n = parseInt(document.getElementById('manualNum').value)||1;
+  addCount(currentLink, sku, n);
+});
+document.getElementById('manualMinus').addEventListener('click', ()=>{
+  const sku = document.getElementById('manualSku').value;
+  const n = parseInt(document.getElementById('manualNum').value)||1;
+  addCount(currentLink, sku, -n);
+});
+
+document.getElementById('clearSession').addEventListener('click', ()=>{
+  if(!confirm('清空本次所有累计数量？（不影响条码对照表）')) return;
+  state[currentLink].session = {};
+  persistSession(currentLink);
+  renderAll();
+});
+document.getElementById('clearMappingBtn').addEventListener('click', ()=>{
+  if(!confirm('清空条码-SKU对照表？以后扫到这些条码需要重新指定SKU。')) return;
+  state[currentLink].mapping = {};
+  persistMapping(currentLink);
+  renderAll();
+});
+
+document.getElementById('copyBtn').addEventListener('click', async ()=>{
+  const box = document.getElementById('exportBox');
+  box.select();
+  try{
+    await navigator.clipboard.writeText(box.value);
+    showFlash('已复制，去粘贴到库存工具里', 'ok');
+  }catch(e){
+    document.execCommand('copy');
+    showFlash('已复制', 'ok');
+  }
+});
+
+// ---------------- 手动备份（不联网/不用同步时的兜底方案） ----------------
+function exportBackup(){
+  const data = {
+    exportedAt: new Date().toISOString(),
+    'mapping-wide': state.wide.mapping,
+    'mapping-narrow': state.narrow.mapping,
+    'session-wide': state.wide.session,
+    'session-narrow': state.narrow.session
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `扫码备份-${new Date().toISOString().slice(0,10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+function importBackup(file){
+  const reader = new FileReader();
+  reader.onload = (e)=>{
+    try{
+      const data = JSON.parse(e.target.result);
+      for(const link of ['wide','narrow']){
+        state[link].mapping = {...state[link].mapping, ...(data[`mapping-${link}`]||{})};
+        state[link].session = {...state[link].session, ...(data[`session-${link}`]||{})};
+        persistMapping(link);
+        persistSession(link);
+      }
+      renderAll();
+      showFlash('备份已导入合并', 'ok');
+    }catch(err){
+      showFlash('备份文件格式不对，导入失败', 'err');
+    }
+  };
+  reader.readAsText(file);
+}
+document.getElementById('exportBackupBtn').addEventListener('click', exportBackup);
+document.getElementById('importBackupBtn').addEventListener('click', ()=>{
+  document.getElementById('importFileInput').click();
+});
+document.getElementById('importFileInput').addEventListener('change', (e)=>{
+  if(e.target.files[0]) importBackup(e.target.files[0]);
+  e.target.value = '';
+});
+
+document.querySelectorAll('.tab').forEach(t=>{
+  t.addEventListener('click', ()=>switchToTab(t.dataset.link));
+});
+
+// ---------------- 启动 ----------------
+loadLocalFallback('wide');
+loadLocalFallback('narrow');
+renderAll();
+tryInitFirebase();
+</script>
+</body>
+</html>
