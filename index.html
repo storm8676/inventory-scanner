@@ -552,18 +552,34 @@ document.getElementById('copyBtn').addEventListener('click', async ()=>{
 async function exportExcelCombined(){
   const workbook = new ExcelJS.Workbook();
   const ws = workbook.addWorksheet('库存');
+  // 列从 A 开始数：A B C D E F G H I -> 这里只用到 D/E(宽版) 和 G/H(窄版)，其余留空占位
   ws.columns = [
-    {width:4},{width:12},{width:8},{width:4},{width:12},{width:8},{width:4}
-  ]; // C D E F G H I
+    {width:4},  // A
+    {width:4},  // B
+    {width:4},  // C
+    {width:16}, // D 宽版SKU
+    {width:10}, // E 宽版数量
+    {width:4},  // F
+    {width:16}, // G 窄版SKU
+    {width:10}, // H 窄版数量
+    {width:4}   // I
+  ];
 
   const centerStyle = { horizontal:'center', vertical:'middle' };
   const highlightFill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFD7F0DC' } }; // 浅绿色
+  const blackBorder = {
+    top:{style:'thin', color:{argb:'FF000000'}},
+    left:{style:'thin', color:{argb:'FF000000'}},
+    bottom:{style:'thin', color:{argb:'FF000000'}},
+    right:{style:'thin', color:{argb:'FF000000'}}
+  };
 
   function styleHeader(addr, text){
-    ws.getCell(addr).value = text;
     const c = ws.getCell(addr);
+    c.value = text;
     c.alignment = centerStyle;
     c.font = { bold:true };
+    c.border = blackBorder;
   }
   function fillColumn(skuCol, qtyCol, skuList, session){
     skuList.forEach((sku, i)=>{
@@ -575,6 +591,8 @@ async function exportExcelCombined(){
       qtyCell.value = qty;
       skuCell.alignment = centerStyle;
       qtyCell.alignment = centerStyle;
+      skuCell.border = blackBorder;
+      qtyCell.border = blackBorder;
       if(qty > 0){ qtyCell.fill = highlightFill; }
     });
   }
@@ -582,7 +600,10 @@ async function exportExcelCombined(){
   ws.mergeCells('D6:E6');
   ws.mergeCells('G6:H6');
   styleHeader('D6', '宽版');
+  styleHeader('E6', ''); // 合并单元格的另一半也要有边框
   styleHeader('G6', '窄版');
+  styleHeader('H6', '');
+  ws.getRow(6).height = 26; // 表头行高加大
 
   fillColumn('D', 'E', SKUS.wide, state.wide.session);
   fillColumn('G', 'H', SKUS.narrow, state.narrow.session);
